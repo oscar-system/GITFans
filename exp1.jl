@@ -25,7 +25,7 @@ ideal_list = [
 
 function is_monomial_free(ideal_list,vars_to_zero)
     for i in vars_to_zero
-        ideal_list = map(j->Singular.poly_subst(j,i,R(0),R),ideal_list)
+        ideal_list = map(j->Singular.substitute_ith_variable(j,i,R(0)),ideal_list)
     end
     saturated = satstd(Ideal(R,ideal_list),Ideal(R,T...))
     return ngens(saturated) == 1 && saturated[1] == R(1)
