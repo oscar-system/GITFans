@@ -102,6 +102,15 @@ function cone_operation(cone,matrix)
     return perlobj("Cone", Dict("INPUT_RAYS" => new_rays ) )
 end
 
+function as_permutation(element, set, action, compare )
+    perm = Array{Int64,1}(undef,length(set))
+    for i in 1:length(set)
+        image = action(set[i],element)
+        perm[i] = findfirst( j -> compare(j,image), set )
+    end
+    return perm
+end
+
 ######## ALGORITHM ##################
 
 grp = GAP.Globals.Group(GAP.julia_to_gap(perms))
@@ -149,3 +158,13 @@ orbit_list = []
 for current_cone in collector_cones_unique
     push!(orbit_list,orbit(current_cone,perms_list_projected,cone_operation,polytope.equal_polyhedra))
 end
+
+new_perm_presentation = Array{Array{Int64,1},1}(undef,0)
+for current_orbit in orbit_list
+    current_presentation = []
+    for current_element in perms_list_projected
+        push!(current_presentation,as_permutation(current_element,current_orbit,cone_operation,polytope.equal_polyhedra))
+    end
+    push!(new_perm_presentation,current_presentation)
+end
+
