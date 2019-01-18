@@ -111,6 +111,84 @@ function as_permutation(element, set, action, compare )
     return perm
 end
 
+function get_interior_point(matrix)
+    matrix_unpacked = matrix_unpack(matrix)
+    result = matrix_unpacked[1]
+    for i in 2:length(matrix_unpacked)
+        result += matrix_unpacked[i]
+    end
+    return result
+end
+
+function compute_bit_list( orbits, point )
+    bitset_list = map(i->BitSet(),orbits)
+    pm_point = convert(pm_Vector{pm_Rational},point)
+    for current_orbit_nr in 1:length(orbits)
+        current_orbit = orbits[current_orbit_nr]
+        for current_cone_nr in 1:length(current_orbit)
+            current_cone = current_orbit[current_cone_nr]
+            if call_method(current_cone,:contains,pm_point)
+                push!(bitset_list[current_orbit_nr],current_cone_nr)
+            end
+        end
+    end
+    return bitset_list
+end
+
+function get_neighbor_hash(orbits, facet_point, inner_normal_vector )
+    lambda = 1024
+    facet_point_bl = compute_bit_list(orbits,facet_point)
+    while true
+        current_point = lambda*facet_point - inner_normal_vector
+        ## FIXME: compute only necessary part of BL
+        current_bl = compute_bit_list(orbits,current_point)
+        current_symmdiff_size = 0
+        if all(i->issubset(current_bl[i],facet_point_bl[i]),1:length(facet_point_bl))
+            return current_bl
+        end
+        println(lambda)
+        lambda *= 2
+    end
+end
+
+## a <= b
+function less_or_equal_array_bitlist(a, b)
+    for i in 1:length(a)
+        if a[i].bits > b[i].bits
+            return false
+        end
+    end
+    return true
+end
+
+function bitlist_oper( bitset, perm )
+    return_list = Int64[]
+    for i in bitset
+        push!(return_list, perm[i] )
+    end
+    return BitSet(return_list)
+end
+
+function bitlist_oper_tuple( bitset_tuple , perm_tuple )
+    return map(i->bitlist_oper(bitset_tuple[i],perm_tuple[i]),1:length(bitset_tuple))
+end
+
+function cones_from_bitlist( cone_list, bit_list_tuple )
+    return_list = Any[]
+    for i in 1:length(cone_list)
+        for j in bit_list_tuple[i]
+            push!(return_list,cone_list[i][j])
+        end
+    end
+    return return_list
+end
+
+function find_smallest_orbit_element(elem, gens, action, comparator, leq )
+    current_orbit = orbit(elem,gens,action,comparator)
+    sorted_orbit = sort(current_orbit;lt=leq)
+    return sorted_orbit[1]
+end
+
 ######## ALGORITHM ##################
 
 grp = GAP.Globals.Group(GAP.julia_to_gap(perms))
@@ -159,7 +237,7 @@ for current_cone in collector_cones_unique
     push!(orbit_list,orbit(current_cone,perms_list_projected,cone_operation,polytope.equal_polyhedra))
 end
 
-new_perm_presentation = Array{Array{Int64,1},1}(undef,0)
+new_perm_presentation = Array{Array{Array{Int64,1},1},1}(undef,0)
 for current_orbit in orbit_list
     current_presentation = []
     for current_element in perms_list_projected
@@ -168,3 +246,51 @@ for current_orbit in orbit_list
     push!(new_perm_presentation,current_presentation)
 end
 
+q_cone = perlobj( "Cone", Dict( "INPUT_RAYS" => mat ) )
+q_cone_rays = q_cone.RAYS
+q_cone_facets = q_cone.FACETS
+q_cone_facets_converted = convert(Array{Rational{BigInt},2},q_cone_facets)
+
+q_cone_int_point = get_interior_point(convert(Array{Rational{BigInt},2},q_cone_rays))
+
+start_hash = compute_bit_list(orbit_list,q_cone_int_point)
+
+generators_new_perm = map( i-> Any[], 1:length(new_perm_presentation[1]))
+
+for i in 1:length(new_perm_presentation)
+    for j in 1:length(new_perm_presentation[i])
+        push!(generators_new_perm[j],new_perm_presentation[i][j])
+    end
+end
+
+orbit_start_hash_smallest = find_smallest_orbit_element(start_hash,generators_new_perm,bitlist_oper_tuple,==,less_or_equal_array_bitlist)
+
+hash_list = [ orbit_start_hash_smallest ]
+current_finished_index = 1
+
+while current_finished_index <= length(hash_list)
+    global current_finished_index
+    current_hash = hash_list[current_finished_index]
+    current_cone_list = cones_from_bitlist( orbit_list, current_hash );
+    intersected_cone = call_function(:intersection, current_cone_list...)
+    facets = intersected_cone.FACETS
+    facets = convert(Array{Rational{BigInt},2},facets)
+    facet_points = []
+    for i in 1:size(facets,1)
+        push!(facet_points, convert(Array{Rational{BigInt},1},call_function(:facet,intersected_cone,i-1).REL_INT_POINT))
+    end
+    neighbor_hashes = []
+    for i in 1:length(facet_points)
+        if any(i->i==0, q_cone_facets_converted*facet_points[i])
+            continue
+        end
+        push!(neighbor_hashes,get_neighbor_hash(orbit_list,facet_points[i],facets[i,:]))
+    end
+    neighbor_hashes = map(i->find_smallest_orbit_element(i,generators_new_perm,bitlist_oper_tuple,==,less_or_equal_array_bitlist),neighbor_hashes)
+    for i in neighbor_hashes
+        if !(i in hash_list)
+            push!(hash_list,i)
+        end
+    end
+    current_finished_index += 1
+end
