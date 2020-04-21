@@ -1,8 +1,5 @@
-using Singular
-using Polymake
-import Nemo
-include("/home/sebastian/Software/gc-converge-julia/gap/pkg/GAPJulia/LibGAP.jl/src/initialization.jl")
-GAP.run_it("/home/sebastian/Software/gc-converge-julia/gap")
+using Oscar
+import GAP # TODO: next version of Oscar will include this
 
 ######## GLOBAL SETTNGS ################
 
