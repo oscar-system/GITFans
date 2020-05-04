@@ -45,61 +45,64 @@ G = GAP.Globals.Group( GAP.julia_to_gap( perms ) )
 
 
 ############################################################################
-##  2. initialize
+##  2. preprocessing: compute G-orbits and induced action
 
-collector_cones = GITFans.orbit_cones( II, Q, G )
-hom = GITFans.action_on_target( Q, G )
-orbit_list = GITFans.orbit_cone_orbits( collector_cones, hom );
-
-# array of homomorphisms,
-# the i-th entry describes the action of G on the i-th orbit
-homs = GITFans.action_on_orbit_cone_orbits( orbit_list, hom )
-
-# the induced actions on each of the orbits
-generators_new_perm = GITFans.rewrite_action_to_orbits( homs )
-
-q_cone = Polymake.polytope.Cone( INPUT_RAYS = Q )
-q_cone_rays = q_cone.RAYS
-q_cone_facets = q_cone.FACETS
-q_cone_facets_converted = convert(Array{Rational{BigInt},2},q_cone_facets)
-q_cone_int_point = GITFans.get_interior_point(convert(Array{Rational{BigInt},2},q_cone_rays))
-
-start_hash = GITFans.compute_bit_list(orbit_list,q_cone_int_point)
-orbit_start_hash_smallest = GITFans.find_smallest_orbit_element(start_hash,generators_new_perm,GITFans.bitlist_oper_tuple,==,GITFans.less_or_equal_array_bitlist)
-
-hash_list = [ orbit_start_hash_smallest ]
+fan_descr = GITFans.GITFan( II, Q, G );
 
 
 ############################################################################
-##  3. compute neighbors until the list is complete
+##  3. fan traversal: compute neighbors until the list is complete
 
-current_finished_index = 1
-while current_finished_index <= length(hash_list)
-    global current_finished_index
-    current_hash = hash_list[current_finished_index]
-    current_cone_list = GITFans.cones_from_bitlist( orbit_list, current_hash );
-    intersected_cone = Polymake.polytope.intersection( current_cone_list...)
-    facets = intersected_cone.FACETS
-    facets = convert(Array{Rational{BigInt},2},facets)
-    facet_points = []
-    for i in 1:size(facets,1)
-        push!(facet_points, convert(Array{Rational{BigInt},1},Polymake.polytope.facet(intersected_cone,i-1).REL_INT_POINT))
-    end
+hash_list = GITFans.fan_traversal( fan_descr, Q );
 
-    neighbor_hashes = []
-    for i in 1:length(facet_points)
-        if any(i->i==0, q_cone_facets_converted*facet_points[i])
-            continue
-        end
-        push!(neighbor_hashes, GITFans.get_neighbor_hash(orbit_list,facet_points[i],facets[i,:]))
-    end
+length( hash_list )
 
-    neighbor_hashes = map(i->GITFans.find_smallest_orbit_element(i,generators_new_perm,GITFans.bitlist_oper_tuple,==,GITFans.less_or_equal_array_bitlist),neighbor_hashes)
-    for i in neighbor_hashes
-        if !(i in hash_list)
-            push!(hash_list,i)
-        end
-    end
-    current_finished_index += 1
+
+############################################################################
+##  4. translate the hashes back to cones
+
+orbit_list = fan_descr[1];
+
+result_cones = map(x -> Polymake.polytope.intersection(
+                          GITFans.cones_from_bitlist(orbit_list, x)...), hash_list);
+
+
+############################################################################
+##  5. expand the orbits (yields 76 maximal cones)
+
+hom = GITFans.action_on_target( Q, G );
+expanded = GITFans.orbit_cone_orbits( result_cones, hom; disjoint_orbits = false )
+length( expanded )              # 6
+map( length, expanded )
+sum( map( length, expanded ) )  # 76
+
+
+############################################################################
+##  6. create the intersection graph
+
+maxcones = [];
+for orb in expanded
+  append!( maxcones, orb )
 end
+
+dims = Set( map( Polymake.polytope.dim, maxcones ) )
+codim1 = collect( dims )[1] - 1
+
+edges = []
+for i in 1:length( maxcones )
+  for j in 1:(i-1)
+    if Polymake.polytope.dim(
+           Polymake.polytope.intersection( maxcones[i], maxcones[j] ) ) == codim1
+      push!( edges, [ j, i ] )
+    end
+  end
+end
+
+length( edges )    # 180
+
+edges = convert( Vector{Vector{Int}}, edges );
+
+intergraph = Polymake.graph.graph_from_edges( edges );
+
+Polymake.graph.visual( intergraph )
 
