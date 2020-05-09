@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [deps]
 GAP = "c863536a-3901-11e9-33e7-d5cd0df7b904"
+Markdown = "d6f4376e-aef5-505a-96c1-9c027394607a"
 Nemo = "2edaba10-b0f1-5616-af89-8c11ac63239a"
 Oscar = "f1435218-dba5-11e9-1e4d-f1a5fab5fc13"
 Polymake = "d720cf60-89b5-51f5-aff5-213f193123e7"
