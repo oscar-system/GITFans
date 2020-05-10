@@ -361,6 +361,15 @@ function cones_from_bitlist(cone_list, bit_list_tuple)
     return return_list
 end;
 
+
+"""
+    hash_to_cone(orbit_list, hash)
+
+"""
+hash_to_cone(orbit_list, hash) = Polymake.polytope.intersection(
+    cones_from_bitlist(orbit_list, hash)...);
+
+
 """
     get_neighbor_hash( orbits, facet_point, inner_normal_vector )
 
@@ -382,7 +391,7 @@ function get_neighbor_hash(orbits, facet_point, inner_normal_vector)
 end;
 
 """
-    GITFan(I, Q, G)
+    orbit_cone_orbits_and_action(I, Q, G)
 
 Return a tuple containing
 the array of orbit cone orbits,
@@ -392,29 +401,34 @@ and the matrix `Q`.
 Here `I` is the ideal in question, `Q` is the Q-matrix,
 and `G` is a symmetry group of the problem.
 """
-function GITFan(I, Q, G)
+function orbit_cone_orbits_and_action(I, Q, G)
     collector_cones = orbit_cones(I, Q, G)
     hom = action_on_target(Q, G)
     orbit_list = orbit_cone_orbits(collector_cones, hom; disjoint_orbits = true);
     homs = action_on_orbit_cone_orbits(orbit_list, hom)
 
-    return (orbit_list, homs, Q)
+    return Dict( "orbit_list" => orbit_list,
+                 "hom" => hom,
+                 "homs" => homs,
+                 "Q" => Q,
+                 "G" => G )
 end;
 
 """
-    fan_traversal(fan_descr)
+    fan_traversal(oco)
 
 Return the a pair `(hash_list, edges)` where `hash_list` is an array that
 encodes orbit representatives of the maximal cones of the GIT fan described
-by `fan_descr`,
-and `edges` encodes the Set of edges of the incidence graph of the orbits.
+by `oco`,
+and `edges` encodes the `Set` of edges of the incidence graph of the orbits.
 
-The input is expected to be a triple as computed by [`GITFan`](@ref).
+The input is expected to be a dictionary as computed by
+[`orbit_cone_orbits_and_action`](@ref).
 """
-function fan_traversal(fan_descr)
-    orbit_list = fan_descr[1]
-    homs = fan_descr[2]
-    Q = fan_descr[3]
+function fan_traversal(oco)
+    orbit_list = oco[ "orbit_list" ]
+    homs = oco[ "homs" ]
+    Q = oco[ "Q" ]
 
     # the induced actions on each of the orbits
     generators_new_perm = rewrite_action_to_orbits(homs)
@@ -468,6 +482,43 @@ function fan_traversal(fan_descr)
 
     return (hash_list, edges)
 end;
+
+
+orbits_of_maximal_GIT_cones(oc, hash_list) = orbit_cone_orbits(
+    map(x -> hash_to_cone(oc[ "orbit_list" ], x), hash_list), oc[ "hom" ]);
+
+
+"""
+    hashes_to_polyhedral_fan(oc, hash_list)
+
+...
+"""
+function hashes_to_polyhedral_fan(oc, hash_list)
+    # translate the descriptions of the orbit repres. of maximal cones
+    # to cone objects
+    result_cones = map(x -> hash_to_cone(oc[ "orbit_list" ], x), hash_list)
+
+    # expand their orbits
+    expanded = orbit_cone_orbits(result_cones, oc[ "hom" ])
+    maxcones = vcat( expanded... )
+
+    # the defining rays for all maximal cones
+    rays_maxcones = [ [ convert( Vector{Rational{BigInt}}, cone.RAYS[i, :] )
+                        for i in 1:size( cone.RAYS, 1 ) ]
+                      for cone in maxcones ]
+
+    # the set of rays
+    allrays = sort( collect( Set( vcat( rays_maxcones... ) ) ) )
+
+    # the indices of rays that belong to each maximal cone (0-based)
+    index_maxcones = [ sort( [ findfirst( x -> x == v, allrays )-1
+                               for v in rays ] )
+                       for rays in rays_maxcones ]
+
+    return Polymake.fan.PolyhedralFan(INPUT_RAYS = hcat( allrays...)',
+                                      INPUT_CONES = index_maxcones)
+end
+
 
 """
     edges_intersection_graph(maxcones, inter_dim)
