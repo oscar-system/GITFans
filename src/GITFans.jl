@@ -521,6 +521,20 @@ end
 
 
 """
+    git_fan(a, Q, G)
+
+Return the polymake object that represents the polyhedral fan given by
+the ideal a, the grading matrix Q, and the symmetry group G.
+"""
+function git_fan(a, Q, G)
+    oc = orbit_cone_orbits_and_action(a, Q, G)
+    (hash_list, edges) = fan_traversal(oc)
+
+    return hashes_to_polyhedral_fan(oc, hash_list)
+end
+
+
+"""
     edges_intersection_graph(maxcones, inter_dim)
 
 Return the array of those pairs `[i, j]` such that `i < j` and such that
