@@ -98,14 +98,14 @@ oc = GITFans.orbit_cone_orbits_and_action(a, Q, G);
 ############################################################################
 ##  Lengths of the orbit cone orbits:
 
-map( length, oc[ "orbit_list" ] )
+map(length, oc[:orbit_list])
 
 
 ############################################################################
 ##  Action of the symmetry group
 ##  permuting the elements of the first orbit cone orbit:
 
-oc[ "homs" ][1]
+oc[:homs][1]
 
 
 ############################################################################

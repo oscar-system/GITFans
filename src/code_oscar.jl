@@ -1,20 +1,10 @@
 
 # the necessary Julia packages
-import Oscar
-import Singular
-import Polymake
-import Nemo
-import GAP
+using Oscar
 
 # for using LaTex in docstrings processed by Documenter.jl
 import Markdown
 
-
-#############################################################################
-
-import Oscar.base_ring
-
-Oscar.base_ring(f::Oscar.MPolyElem_dec{T}) where {T} = base_ring(f.f)
 
 #############################################################################
 
@@ -65,13 +55,13 @@ function find_smallest_orbit_element(elem, ggens, action, comparator, leq)
 end;
 
 function rewrite_action_to_orbits(homs)
-    G = Oscar.domain(homs[1])
-    Ggens = Oscar.gens(G)
+    G = domain(homs[1])
+    Ggens = gens(G)
     generators_new_perm = [Vector{Int}[] for x in Ggens]
 
     for hom in homs
       for j in 1:length(generators_new_perm)
-        img = Oscar.listperm(Oscar.image(hom, Ggens[j]))
+        img = listperm(image(hom, Ggens[j]))
         if length(img) == 0
           img = Int[1]
         end
@@ -88,7 +78,7 @@ end;
 # user functions
 
 """
-    is_monomial_free(I::Oscar.MPolyIdeal{T}, vars_to_zero = []) where {T}
+    is_monomial_free(I::Oscar.MPolyIdeal, vars_to_zero = [])
 
 See Prop. 3.1 in [BKR](https://arxiv.org/abs/1603.09241).
 """
@@ -123,9 +113,8 @@ function is_monomial_free(I::Oscar.MPolyIdeal{T}, vars_to_zero::Vector{Int} = In
     return true
 end
 
-
 """
-    orbit_cones(I::Oscar.MPolyIdeal{T}, Q::Array{Int,2}, G::Oscar.GAPGroup = symmetric_group(1)) where {T}
+    orbit_cones(I::Oscar.MPolyIdeal, Q::Array{Int,2}, G::Oscar.GAPGroup = symmetric_group(1))
 
 > Return orbit representatives of the group `G` on the set of those cones
 > whose defining rays are given by subsets `S` of the rows of the matrix `Q`,
@@ -133,22 +122,20 @@ end
 > monomial-free (see [`is_monomial_free`](@ref)) w.r.t. the variables `x_i`
 > for which the `i`-th row of `Q` is not contained in `S`.
 """
-function orbit_cones(I::Oscar.MPolyIdeal{T}, Q::Array{Int,2}, G::Oscar.GAPGroup = symmetric_group(1)) where {T}
-    nr_variables = size(Q, 1)
-    projected_dimension = size(Q, 2)
+function orbit_cones(I::Oscar.MPolyIdeal, Q::Array{Int,2}, G::Oscar.GAPGroup = symmetric_group(1))
+    nr_variables, projected_dimension = size(Q)
 
     collector_cones = []
 
     # We need not consider sets of smaller size because of the rank condition.
     for k in projected_dimension:nr_variables
-        set = GAP.Globals.Combinations(GAP.GapObj(1:nr_variables), k)
-        orbs = GAP.Globals.Orbits(G.X, set, GAP.Globals.OnSets)
-        reps = [orbs[i][1] for i in 1:length(orbs)]
-        reps_julia = [Vector{Int64}(i) for i in reps]
+        set = Hecke.subsets(nr_variables, k)
+        orbs = GAP.Globals.Orbits(G.X, GAP.GapObj(set, recursive = true), GAP.Globals.OnSets)
+#T TODO: switch to an Oscar `orbits` function
 
-        for i in reps_julia
+        for i in [Vector{Int64}(orbs[i][1]) for i in 1:length(orbs)]
             current_mat = Q[i,:]
-            if Nemo.rank(current_mat) == projected_dimension &&
+            if rank(current_mat) == projected_dimension &&
                is_monomial_free(I, setdiff(1:nr_variables, i))
                 cone = Polymake.polytope.Cone(INPUT_RAYS = current_mat)
                 if ! any(j -> Polymake.polytope.equal_polyhedra(j, cone),
@@ -192,7 +179,7 @@ julia> n = size(Q, 1)
 
 julia> perms_list = [[1,3,2,4,6,5,7,8,10,9], [5,7,1,6,9,2,8,4,10,3]];
 
-julia> sym10 = Oscar.symmetric_group(n);
+julia> sym10 = symmetric_group(n);
 
 julia> permgens = [sym10(x) for x in perms_list];
 
@@ -221,23 +208,22 @@ function action_on_target(Q::Array{Int,2}, G::Oscar.GAPGroup)
 
     # For each permutation generator,
     # solve the linear equation system.
-    m = size(Q, 1)
-    n = size(Q, 2)
+    m, n = size(Q)
 # FIXME: GAP knows no GL(n, \Q), we take GL(n, \Z) for the moment.
-    matZ = Oscar.matrix(Oscar.ZZ, Q)
+    matZ = matrix(ZZ, Q)
     genimgs = []
-    permgens = Oscar.gens(G)
+    permgens = gens(G)
     for ppi in permgens
-      imgs = [ppi(i) for i in 1:m]
-      matimg = matZ[imgs, 1:n]
-      good, matgen = Oscar.can_solve(matZ, matimg)
+      matimg = matZ[listperm(ppi), 1:n]
+      good, matgen = can_solve(matZ, matimg)
       good || error("permutation does not induce matrix action")
-      push!(genimgs, GAP.GapObj(Matrix{Int}(matgen)))
+      push!(genimgs, GAP.GapObj(Array{BigInt,2}(matgen), recursive = true))
+#TODO: provide conversion from fmpz_mat to GAP
     end
 
     # Create the matrix group.
 #FIXME: Change this as soon as there is better support for matrix groups.
-    matgroup = Oscar.GL(Oscar.MatrixGroup, n, Oscar.ZZ)
+    matgroup = GL(MatrixGroup, n, ZZ)
     matgens = [Oscar.group_element(matgroup, m) for m in genimgs]
 
     # Create the group homomorphism.
@@ -288,7 +274,7 @@ function as_permutation(element, set, action, compare)
         image = action(set[i], element)
         perm[i] = findfirst(j -> compare(j, image), set)
     end
-    return Oscar.group_element(Oscar.symmetric_group(n), GAP.Globals.PermList(GAP.GapObj(perm)))
+    return Oscar.group_element(symmetric_group(n), GAP.Globals.PermList(GAP.GapObj(perm)))
 end;
 
 function matrix_action_on_cones(cone, matrix)
@@ -297,7 +283,7 @@ function matrix_action_on_cones(cone, matrix)
 end;
 
 function orbit_cone_orbits(cones, hom; disjoint_orbits = false)
-    matgens = [Matrix{BigInt}(mat.X) for mat in Oscar.gens(Oscar.image(hom)[1])]
+    matgens = [Matrix{BigInt}(mat.X) for mat in gens(image(hom)[1])]
     act = matrix_action_on_cones
     comp = Polymake.polytope.equal_polyhedra
 
@@ -312,17 +298,17 @@ function orbit_cone_orbits(cones, hom; disjoint_orbits = false)
     return result
 end
 
-function action_on_orbit_cone_orbits(orbits, hom::Oscar.GAPGroupHomomorphism)
+function action_on_orbit_cone_orbits(orbits, hom::GAPGroupHomomorphism)
     G = hom.domain
-    Ggens = Oscar.gens(G)
-    matgens = [Matrix{BigInt}(Oscar.image(hom, g).X) for g in Ggens]
+    Ggens = gens(G)
+    matgens = [Matrix{BigInt}(image(hom, g).X) for g in Ggens]
     act = matrix_action_on_cones
     comp = Polymake.polytope.equal_polyhedra
 
     res = []
     for orb in orbits
         list = [as_permutation(gen, orb, act, comp) for gen in matgens]
-        push!(res, Oscar.hom(G, Oscar.sub(list...)[1], Ggens, list))
+        push!(res, Oscar.hom(G, sub(list...)[1], Ggens, list))
     end
 
     return res
@@ -403,27 +389,26 @@ function get_neighbor_hash(orbits, facet_point, inner_normal_vector)
 end;
 
 """
-    orbit_cone_orbits_and_action(I::Oscar.MPolyIdeal{T}, Q::Array{Int,2}, G::Oscar.GAPGroup) where {T}
+    orbit_cone_orbits_and_action(I::Oscar.MPolyIdeal, Q::Array{Int,2}, G::Oscar.GAPGroup)
 
-Return a dictionary containing
-- `orbit_list`: the array of orbit cone orbits,
-- `homs`: the array of the corresponding GAP homomorphism objects from `G` to the induced permutation action on the orbits,
-- `Q`: the matrix `Q`.
-
-Here `I` is the ideal in question, `Q` is the Q-matrix,
-and `G` is a symmetry group of the problem.
+Return a named tupe containing
+- `:orbit_list`: the array of orbit cone orbits,
+- `:hom`: the ...
+- `:homs`: the array of the corresponding homomorphism objects from `G` to the induced permutation action on the orbits,
+- `:Q`: the grading matrix `Q`,
+- `:G`: the given symmetry group `G`.
 """
-function orbit_cone_orbits_and_action(I::Oscar.MPolyIdeal{T}, Q::Array{Int,2}, G::Oscar.GAPGroup) where {T}
+function orbit_cone_orbits_and_action(I::Oscar.MPolyIdeal, Q::Array{Int,2}, G::Oscar.GAPGroup)
     collector_cones = orbit_cones(I, Q, G)
     hom = action_on_target(Q, G)
     orbit_list = orbit_cone_orbits(collector_cones, hom; disjoint_orbits = true);
     homs = action_on_orbit_cone_orbits(orbit_list, hom)
 
-    return Dict("orbit_list" => orbit_list,
-                "hom" => hom,
-                "homs" => homs,
-                "Q" => Q,
-                "G" => G)
+    return (orbit_list = orbit_list,
+            hom = hom,
+            homs = homs,
+            Q = Q,
+            G = G)
 end;
 
 """
@@ -434,13 +419,13 @@ encodes orbit representatives of the maximal cones of the GIT fan described
 by `oco`,
 and `edges` encodes the `Set` of edges of the incidence graph of the orbits.
 
-The input is expected to be a dictionary as computed by
+The input is expected to be a named tuple as computed by
 [`orbit_cone_orbits_and_action`](@ref).
 """
 function fan_traversal(oco)
-    orbit_list = oco["orbit_list"]
-    homs = oco["homs"]
-    Q = oco["Q"]
+    orbit_list = oco[:orbit_list]
+    homs = oco[:homs]
+    Q = oco[:Q]
 
     # the induced actions on each of the orbits
     generators_new_perm = rewrite_action_to_orbits(homs)
@@ -497,16 +482,16 @@ end;
 
 
 orbits_of_maximal_GIT_cones(oc, hash_list) = orbit_cone_orbits(
-    map(x -> hash_to_cone(oc["orbit_list"], x), hash_list), oc["hom"]);
+    map(x -> hash_to_cone(oc[:orbit_list], x), hash_list), oc[:hom]);
 
 
 function hashes_to_polyhedral_fan(oc, hash_list)
     # translate the descriptions of the orbit repres. of maximal cones
     # to cone objects
-    result_cones = map(x -> hash_to_cone(oc["orbit_list"], x), hash_list)
+    result_cones = map(x -> hash_to_cone(oc[:orbit_list], x), hash_list)
 
     # expand their orbits
-    expanded = orbit_cone_orbits(result_cones, oc["hom"])
+    expanded = orbit_cone_orbits(result_cones, oc[:hom])
     maxcones = vcat(expanded...)
 
     # the defining rays for all maximal cones
@@ -528,12 +513,12 @@ end
 
 
 """
-    git_fan(a::Oscar.MPolyIdeal{T}, Q::Array{Int,2}, G::Oscar.GAPGroup) where {T}
+    git_fan(a::Oscar.MPolyIdeal, Q::Array{Int,2}, G::Oscar.GAPGroup)
 
 Return the polymake object that represents the polyhedral fan given by
 the ideal `a`, the grading matrix `Q`, and the symmetry group `G`.
 """
-function git_fan(a::Oscar.MPolyIdeal{T}, Q::Array{Int,2}, G::Oscar.GAPGroup) where {T}
+function git_fan(a::Oscar.MPolyIdeal, Q::Array{Int,2}, G::Oscar.GAPGroup)
     oc = orbit_cone_orbits_and_action(a, Q, G)
     (hash_list, edges) = fan_traversal(oc)
 
