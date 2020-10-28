@@ -82,32 +82,33 @@ end;
 
 See Prop. 3.1 in [BKR](https://arxiv.org/abs/1603.09241).
 """
-function is_monomial_free(I::Oscar.MPolyIdeal{T}, vars_to_zero::Vector{Int} = Int[]) where {T}
+function is_monomial_free(I::Oscar.MPolyIdeal, vars_to_zero::Vector{Int} = Int[])
     Oscar.singular_assure(I)
     SingI = I.gens.S
     R = Oscar.base_ring(SingI)
     Rgens = Oscar.gens(R)
     nr_variables = length(Rgens)
-    poly_list = map(f -> Oscar.evaluate(f, vars_to_zero, fill(R(0), length(vars_to_zero))), Oscar.gens(SingI))
+    poly_list = map(f -> evaluate(f, vars_to_zero, fill(R(0), length(vars_to_zero))), gens(SingI))
 
     # perm is an n-cycle
     perm = collect(2:nr_variables)
     push!(perm, 1)
 
     Rgens_permuted = Rgens[perm]
+    si = Singular.Ideal(R, poly_list)
 
     for i in 1:nr_variables
         if !(nr_variables in vars_to_zero)
-            saturated = Singular.satstd(
-                Singular.Ideal(R, poly_list), Singular.MaximalIdeal(R, 1))
-            if Singular.ngens(saturated) == 1 && saturated[1] == R(1)
+            si = Singular.satstd( si, Singular.MaximalIdeal(R, 1))
+            if Singular.ngens(si) == 1 && si[1] == R(1)
                 return false
-            elseif reduce(R(1), saturated) == 0
+            elseif reduce(R(1), si) == 0
                 return false
             end
         end
         vars_to_zero = perm[vars_to_zero]
-        poly_list = [Oscar.evaluate(j, Rgens_permuted) for j in poly_list]
+        permuted_gens = [evaluate(j, Rgens_permuted) for j in gens(si)]
+        si = Singular.Ideal(R, permuted_gens)
     end
 
     return true
