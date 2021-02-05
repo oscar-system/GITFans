@@ -216,10 +216,10 @@ function action_on_target(Q::Array{Int,2}, G::Oscar.GAPGroup)
     permgens = gens(G)
     for ppi in permgens
       matimg = matZ[listperm(ppi), 1:n]
-      good, matgen = can_solve(matZ, matimg)
-      good || error("permutation does not induce matrix action")
+      matgen = Nemo.solve(matZ, matimg)
       push!(genimgs, GAP.GapObj(Array{BigInt,2}(matgen), recursive = true))
 #TODO: provide conversion from fmpz_mat to GAP
+# use:    GAP.julia_to_gap(matgen)
     end
 
     # Create the matrix group.
