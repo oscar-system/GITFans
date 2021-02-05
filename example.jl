@@ -45,7 +45,7 @@ Q = [
 
 # polynomial ring
 n = size(Q, 1)
-Qt, T = PolynomialRing(QQ, :T => 1:n)
+Qt, T = Oscar.PolynomialRing(QQ, :T => 1:n)
 D = free_abelian_group(size(Q,2))
 w = [D(Q[i, :]) for i = 1:n]
 R = grade(Qt, w)
