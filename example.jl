@@ -12,7 +12,8 @@
 ##  [J. Boehm, S. Keicher, Y. Ren:
 ##  Computing GIT-Fans with Symmetry and the Mori Chamber Decomposition of
 ##  $\overline{M}_{0,6}$](https://arxiv.org/abs/1603.09241)
-##  (To appear in Math. Comp. 2020.)
+##  ([Math. Comp. 89 (2020),
+##  3003-3021](https://mathscinet.ams.org/mathscinet-getitem?mr=4136555))
 
 using Oscar
 using GITFans
@@ -51,7 +52,7 @@ w = [D(Q[i, :]) for i = 1:n]
 R = grade(Qt, w)
 
 # generators for the ideal
-a = ideal(R, [
+a = ideal([
     T[5]*T[10] - T[6]*T[9] + T[7]*T[8],
     T[1]*T[9]  - T[2]*T[7] + T[4]*T[5],
     T[1]*T[8]  - T[2]*T[6] + T[3]*T[5],

@@ -13,7 +13,9 @@ import Markdown
 import Oscar: general_linear_group
 
 function Oscar.general_linear_group(T::Type{Oscar.MatrixGroup}, n::Int, ::Oscar.FlintIntegerRing)
-    return T(GAP.Globals.GL(Oscar._gap_filter(T), n, GAP.Globals.Integers))
+    G = MatrixGroup(n, ZZ)
+    G.X = GAP.Globals.GL(Oscar._gap_filter(T), n, GAP.Globals.Integers)
+    return G
 end
 
 #############################################################################
@@ -207,23 +209,22 @@ which is equal to $Q\{J^{\pi^{-1}}\}$.
 """
 function action_on_target(Q::Array{Int,2}, G::Oscar.GAPGroup)
 
-    # For each permutation generator,
-    # solve the linear equation system.
+    # For each permutation generator describing the action on the rows of Q,
+    # compute the induced action on the column space,
+    # by solving a linear equation system.
     m, n = size(Q)
 # FIXME: GAP knows no GL(n, \Q), we take GL(n, \Z) for the moment.
     matZ = matrix(ZZ, Q)
     genimgs = []
     permgens = gens(G)
     for ppi in permgens
-      matimg = matZ[listperm(ppi), 1:n]
+      matimg = matZ[listperm(ppi), 1:n]  # permute the rows with `ppi`
       matgen = Nemo.solve(matZ, matimg)
-      push!(genimgs, GAP.GapObj(Array{BigInt,2}(matgen), recursive = true))
-#TODO: provide conversion from fmpz_mat to GAP
-# use:    GAP.julia_to_gap(matgen)
+      push!(genimgs, GAP.GapObj(matgen))
     end
 
     # Create the matrix group.
-#FIXME: Change this as soon as there is better support for matrix groups.
+#FIXME: Change this as soon as there is support for char. 0 matrix groups.
     matgroup = GL(MatrixGroup, n, ZZ)
     matgens = [Oscar.group_element(matgroup, m) for m in genimgs]
 
@@ -273,7 +274,11 @@ function as_permutation(element, set, action, compare)
     perm = Vector{Int64}(undef, n)
     for i in 1:length(set)
         image = action(set[i], element)
-        perm[i] = findfirst(j -> compare(j, image), set)
+        pos = findfirst(j -> compare(j, image), set)
+        if pos === nothing
+          error("the set is not invariant under the given action")
+        end
+        perm[i] = pos
     end
     return Oscar.group_element(symmetric_group(n), GAP.Globals.PermList(GAP.GapObj(perm)))
 end;
@@ -284,7 +289,7 @@ function matrix_action_on_cones(cone, matrix)
 end;
 
 function orbit_cone_orbits(cones, hom; disjoint_orbits = false)
-    matgens = [Matrix{BigInt}(mat.X) for mat in gens(image(hom)[1])]
+    matgens = [Matrix{BigInt}(image(hom, g).X) for g in gens(domain(hom))]
     act = matrix_action_on_cones
     comp = Polymake.polytope.equal_polyhedra
 
@@ -300,8 +305,14 @@ function orbit_cone_orbits(cones, hom; disjoint_orbits = false)
 end
 
 function action_on_orbit_cone_orbits(orbits, hom::GAPGroupHomomorphism)
-    G = hom.domain
+    G = domain(hom)
     Ggens = gens(G)
+
+    if isempty(Ggens)
+        map = id_hom(G)
+        return [map for x in orbits]
+    end
+
     matgens = [Matrix{BigInt}(image(hom, g).X) for g in Ggens]
     act = matrix_action_on_cones
     comp = Polymake.polytope.equal_polyhedra
@@ -392,9 +403,9 @@ end;
 """
     orbit_cone_orbits_and_action(I::Oscar.MPolyIdeal, Q::Array{Int,2}, G::Oscar.GAPGroup)
 
-Return a named tupe containing
+Return a named tuple containing
 - `:orbit_list`: the array of orbit cone orbits,
-- `:hom`: the ...
+- `:hom`: the homomorphism computed as `action_on_target(Q, G)`
 - `:homs`: the array of the corresponding homomorphism objects from `G` to the induced permutation action on the orbits,
 - `:Q`: the grading matrix `Q`,
 - `:G`: the given symmetry group `G`.
@@ -415,7 +426,7 @@ end;
 """
     fan_traversal(oco)
 
-Return the a pair `(hash_list, edges)` where `hash_list` is an array that
+Return the pair `(hash_list, edges)` where `hash_list` is an array that
 encodes orbit representatives of the maximal cones of the GIT fan described
 by `oco`,
 and `edges` encodes the `Set` of edges of the incidence graph of the orbits.
@@ -500,6 +511,11 @@ function hashes_to_polyhedral_fan(oc, hash_list)
                       for i in 1:size(cone.RAYS, 1)]
                       for cone in maxcones]
 
+    # the defining rays for the orbit representatives of maximal cones
+    rays_result_cones = [[convert(Vector{Rational{BigInt}}, cone.RAYS[i, :])
+                      for i in 1:size(cone.RAYS, 1)]
+                      for cone in result_cones]
+
     # the set of rays
     allrays = sort(collect(Set(vcat(rays_maxcones...))))
 
@@ -508,8 +524,54 @@ function hashes_to_polyhedral_fan(oc, hash_list)
                             for v in rays])
                       for rays in rays_maxcones]
 
-    return Polymake.fan.PolyhedralFan(INPUT_RAYS = hcat(allrays...)',
-                                      INPUT_CONES = index_maxcones)
+    # the indices of rays that belong to each repres. cone (0-based)
+    index_result_cones = [sort([findfirst(x -> x == v, allrays)-1
+                            for v in rays])
+                      for rays in rays_result_cones]
+
+    # The fan object without information about the symmetry group
+    # could now be constructed as follows.
+    # # return Polymake.fan.PolyhedralFan(INPUT_RAYS = hcat(allrays...)',
+    # #                                   INPUT_CONES = index_maxcones)
+
+    # In order to create a fan object with symmetry information, prepare
+    # - the matrix of rays,
+    # - the permutation generators of the symmetry group G acting on the rays,
+    #   computed from the matrix action,
+    # - representatives of the G-orbits on the maximal cones,
+    #   each given by its defining rays, via the row indices (zero based)
+    #   in the matrix of rays.
+    pm_rays = Polymake.Matrix(hcat(allrays...)')
+    matgens = [image(oc[:hom], x) for x in gens(domain(oc[:hom]))]
+    mats_transp = [GAP.gap_to_julia(Matrix{Rational{BigInt}}, x.X)' for x in matgens]
+
+    # Note that the matrices have been transposed because we use
+    # matrix times vector multiplication.
+    actfun = function(ray, mat)
+      ray = mat * ray
+      # normalize the image vector
+      for i in 1:length(ray)
+        if ray[i] != 0
+          return ray // ray[i]
+        end
+      end
+      error("a zero vector should not appear")
+    end
+
+    rewr = [as_permutation(x, allrays, actfun, ==) for x in mats_transp]
+
+    rewr2 = [Vector(x) .- 1 for x in rewr]  # zero based
+    pm_gens = @Polymake.convert_to Array{Array{Int}} rewr2
+
+    pm_mc_reps = @Polymake.convert_to Array{Array{Int}} index_result_cones
+
+    # Create the fan object, and set the attributes.
+    pf = Polymake.fan.PolyhedralFan()
+    Polymake.take(pf, "RAYS", pm_rays)
+    Polymake.take(pf, "GROUP.REPRESENTATIVE_MAXIMAL_CONES", pm_mc_reps)
+    Polymake.take(pf, "GROUP.RAYS_ACTION.GENERATORS", pm_gens)
+
+    return pf
 end
 
 
