@@ -20,7 +20,7 @@
     D = free_abelian_group(size(Q,2))
     w = [D(Q[i, :]) for i = 1:n]
     R = grade(Qt, w)
-    a = ideal(R, [
+    a = ideal([
         T[5]*T[10] - T[6]*T[9] + T[7]*T[8],
         T[1]*T[9]  - T[2]*T[7] + T[4]*T[5],
         T[1]*T[8]  - T[2]*T[6] + T[3]*T[5],
@@ -60,5 +60,12 @@
 
     fanobj = GITFans.hashes_to_polyhedral_fan(oc, hash_list)
     @test fanobj.F_VECTOR == [20, 110, 240, 225, 76]
+
+#   # Now try the construction with trivial symmetry group.
+#   G2 = trivial_subgroup(G)[1]
+#   fanobj2 = GITFans.git_fan(a, Q, G2)
+#   @test fanobj2.F_VECTOR == [20, 110, 240, 225, 76]
+#T This fails sometimes (not always) with `ERROR: std::bad_alloc`
+#T when trying `Polymake.polytope.equal_polyhedra`.
 
 end

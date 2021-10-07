@@ -12,7 +12,8 @@
 ##  [J. Boehm, S. Keicher, Y. Ren:
 ##  Computing GIT-Fans with Symmetry and the Mori Chamber Decomposition of
 ##  $\overline{M}_{0,6}$](https://arxiv.org/abs/1603.09241)
-##  (To appear in Math. Comp. 2020.)
+##  ([Math. Comp. 89 (2020), 
+##  3003-3021](https://mathscinet.ams.org/mathscinet-getitem?mr=4136555))
 
 
 ############################################################################
