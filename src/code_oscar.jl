@@ -117,7 +117,7 @@ function is_monomial_free(I::Oscar.MPolyIdeal, vars_to_zero::Vector{Int} = Int[]
 end
 
 """
-    orbit_cones(I::Oscar.MPolyIdeal, Q::Array{Int,2}, G::Oscar.GAPGroup = symmetric_group(1))
+    orbit_cones(I::Oscar.MPolyIdeal, Q::Matrix{Int}, G::Oscar.GAPGroup = symmetric_group(1))
 
 > Return orbit representatives of the group `G` on the set of those cones
 > whose defining rays are given by subsets `S` of the rows of the matrix `Q`,
@@ -125,7 +125,7 @@ end
 > monomial-free (see [`is_monomial_free`](@ref)) w.r.t. the variables `x_i`
 > for which the `i`-th row of `Q` is not contained in `S`.
 """
-function orbit_cones(I::Oscar.MPolyIdeal, Q::Array{Int,2}, G::Oscar.GAPGroup = symmetric_group(1))
+function orbit_cones(I::Oscar.MPolyIdeal, Q::Matrix{Int}, G::Oscar.GAPGroup = symmetric_group(1))
     nr_variables, projected_dimension = size(Q)
 
     collector_cones = []
@@ -155,7 +155,7 @@ end
 #T later we expand the orbits, do we want to check this here?
 
 @doc Markdown.doc"""
-    action_on_target(Q::Array{Int,2}, G::Oscar.GAPGroup)
+    action_on_target(Q::Matrix{Int}, G::Oscar.GAPGroup)
 
 Let `Q` be an $n \times m$ Q-matrix, and `G` be a GAP permutation group
 on $n$ points that describes an action on the rows of `Q`.
@@ -207,7 +207,7 @@ The cone defined by $Q{J}$ is mapped to
 $Q{J} \cdot \rho(\pi^{-1}) = (Q \cdot \rho(\pi^{-1}))\{J\} = Q^\pi\{J\}$,
 which is equal to $Q\{J^{\pi^{-1}}\}$.
 """
-function action_on_target(Q::Array{Int,2}, G::Oscar.GAPGroup)
+function action_on_target(Q::Matrix{Int}, G::Oscar.GAPGroup)
 
     # For each permutation generator describing the action on the rows of Q,
     # compute the induced action on the column space,
@@ -288,15 +288,14 @@ function matrix_action_on_cones(cone, matrix)
     return Polymake.polytope.Cone(INPUT_RAYS = rays * matrix)
 end;
 
-function orbit_cone_orbits(cones, hom; disjoint_orbits = false)
+function orbit_cone_orbits(cones, hom)
     matgens = [Matrix{BigInt}(image(hom, g).X) for g in gens(domain(hom))]
     act = matrix_action_on_cones
     comp = Polymake.polytope.equal_polyhedra
 
     result = []
     for cone in cones
-        orb = orbit(cone, matgens, act, comp)
-        if disjoint_orbits || all(o -> all(c -> ! comp(cone, c), o), result)
+        if all(o -> all(c -> ! comp(cone, c), o), result)
             push!(result, orbit(cone, matgens, act, comp))
         end
     end
@@ -400,49 +399,19 @@ function get_neighbor_hash(orbits, facet_point, inner_normal_vector)
     end
 end;
 
-"""
-    orbit_cone_orbits_and_action(I::Oscar.MPolyIdeal, Q::Array{Int,2}, G::Oscar.GAPGroup)
-
-Return a named tuple containing
-- `:orbit_list`: the array of orbit cone orbits,
-- `:hom`: the homomorphism computed as `action_on_target(Q, G)`
-- `:homs`: the array of the corresponding homomorphism objects from `G` to the induced permutation action on the orbits,
-- `:Q`: the grading matrix `Q`,
-- `:G`: the given symmetry group `G`.
-"""
-function orbit_cone_orbits_and_action(I::Oscar.MPolyIdeal, Q::Array{Int,2}, G::Oscar.GAPGroup)
-    collector_cones = orbit_cones(I, Q, G)
-    hom = action_on_target(Q, G)
-    orbit_list = orbit_cone_orbits(collector_cones, hom; disjoint_orbits = true);
-    homs = action_on_orbit_cone_orbits(orbit_list, hom)
-
-    return (orbit_list = orbit_list,
-            hom = hom,
-            homs = homs,
-            Q = Q,
-            G = G)
-end;
 
 """
-    fan_traversal(oco)
+    fan_traversal(orbit_list, q_cone, perm_actions)
 
 Return the pair `(hash_list, edges)` where `hash_list` is an array that
 encodes orbit representatives of the maximal cones of the GIT fan described
-by `oco`,
+by `orbit_list`, `q_cone`, and `perm_actions`,
 and `edges` encodes the `Set` of edges of the incidence graph of the orbits.
-
-The input is expected to be a named tuple as computed by
-[`orbit_cone_orbits_and_action`](@ref).
 """
-function fan_traversal(oco)
-    orbit_list = oco[:orbit_list]
-    homs = oco[:homs]
-    Q = oco[:Q]
-
+function fan_traversal(orbit_list, q_cone, perm_actions)
     # the induced actions on each of the orbits
-    generators_new_perm = rewrite_action_to_orbits(homs)
+    generators_new_perm = rewrite_action_to_orbits(perm_actions)
 
-    q_cone = Polymake.polytope.Cone(INPUT_RAYS = Q)
     q_cone_facets_converted = convert(Matrix{Rational{BigInt}}, q_cone.FACETS)
     q_cone_int_point = get_interior_point(q_cone)
 
@@ -493,17 +462,17 @@ function fan_traversal(oco)
 end;
 
 
-orbits_of_maximal_GIT_cones(oc, hash_list) = orbit_cone_orbits(
-    map(x -> hash_to_cone(oc[:orbit_list], x), hash_list), oc[:hom]);
+orbits_of_maximal_GIT_cones(orbit_list, hash_list, matrix_action) =
+    orbit_cone_orbits( map(x -> hash_to_cone(orbit_list, x), hash_list), matrix_action);
 
 
-function hashes_to_polyhedral_fan(oc, hash_list)
+function hashes_to_polyhedral_fan(orbit_list, hash_list, hom)
     # translate the descriptions of the orbit repres. of maximal cones
     # to cone objects
-    result_cones = map(x -> hash_to_cone(oc[:orbit_list], x), hash_list)
+    result_cones = map(x -> hash_to_cone(orbit_list, x), hash_list)
 
     # expand their orbits
-    expanded = orbit_cone_orbits(result_cones, oc[:hom])
+    expanded = orbit_cone_orbits(result_cones, hom)
     maxcones = vcat(expanded...)
 
     # the defining rays for all maximal cones
@@ -542,7 +511,7 @@ function hashes_to_polyhedral_fan(oc, hash_list)
     #   each given by its defining rays, via the row indices (zero based)
     #   in the matrix of rays.
     pm_rays = Polymake.Matrix(hcat(allrays...)')
-    matgens = [image(oc[:hom], x) for x in gens(domain(oc[:hom]))]
+    matgens = [image(hom, x) for x in gens(domain(hom))]
     mats_transp = [GAP.gap_to_julia(Matrix{Rational{BigInt}}, x.X)' for x in matgens]
 
     # Note that the matrices have been transposed because we use
@@ -576,16 +545,21 @@ end
 
 
 """
-    git_fan(a::Oscar.MPolyIdeal, Q::Array{Int,2}, G::Oscar.GAPGroup)
+    git_fan(a::Oscar.MPolyIdeal, Q::Matrix{Int}, G::Oscar.GAPGroup)
 
 Return the polymake object that represents the polyhedral fan given by
 the ideal `a`, the grading matrix `Q`, and the symmetry group `G`.
 """
-function git_fan(a::Oscar.MPolyIdeal, Q::Array{Int,2}, G::Oscar.GAPGroup)
-    oc = orbit_cone_orbits_and_action(a, Q, G)
-    (hash_list, edges) = fan_traversal(oc)
+function git_fan(a::Oscar.MPolyIdeal, Q::Matrix{Int}, G::Oscar.GAPGroup)
+    collector_cones = orbit_cones(a, Q, G)
+    matrix_action = action_on_target(Q, G)
+    orbit_list = orbit_cone_orbits(collector_cones, matrix_action)
+    perm_actions = action_on_orbit_cone_orbits(orbit_list, matrix_action)
+    q_cone = Polymake.polytope.Cone(INPUT_RAYS = Q)
 
-    return hashes_to_polyhedral_fan(oc, hash_list)
+    (hash_list, edges) = fan_traversal(orbit_list, q_cone, perm_actions)
+
+    return hashes_to_polyhedral_fan(orbit_list, hash_list, matrix_action)
 end
 
 
