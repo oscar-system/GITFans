@@ -35,10 +35,15 @@
     fanobj = GITFans.git_fan(a, Q, G)
     @test fanobj.F_VECTOR == [20, 110, 240, 225, 76]
 
-    oc = GITFans.orbit_cone_orbits_and_action(a, Q, G);
-    @test map(length, oc[:orbit_list]) == [10, 15, 10, 1]
+    collector_cones = GITFans.orbit_cones(a, Q, G)
+    matrix_action = GITFans.action_on_target(Q, G)
+    orbit_list = GITFans.orbit_cone_orbits(collector_cones, matrix_action)
+    @test map(length, orbit_list) == [10, 15, 10, 1]
 
-    (hash_list, edges) = GITFans.fan_traversal(oc);
+    perm_actions = GITFans.action_on_orbit_cone_orbits(orbit_list, matrix_action)
+    q_cone = Polymake.polytope.Cone(INPUT_RAYS = Q)
+
+    (hash_list, edges) = GITFans.fan_traversal(orbit_list, q_cone, perm_actions)
     @test length(hash_list) == 6
     @test hash_list[1] == [
            BitSet([]),
@@ -48,7 +53,7 @@
 
     intergraph = Polymake.graph.graph_from_edges(collect(edges));
 
-    expanded = GITFans.orbits_of_maximal_GIT_cones(oc, hash_list);
+    expanded = GITFans.orbits_of_maximal_GIT_cones(orbit_list, hash_list, matrix_action);
     orbit_lengths = map(length, expanded)
     @test sum(orbit_lengths) == 76
 
@@ -58,7 +63,7 @@
 
     full_intergraph = Polymake.graph.graph_from_edges(collect(full_edges));
 
-    fanobj = GITFans.hashes_to_polyhedral_fan(oc, hash_list)
+    fanobj = GITFans.hashes_to_polyhedral_fan(orbit_list, hash_list, matrix_action)
     @test fanobj.F_VECTOR == [20, 110, 240, 225, 76]
 
 #   # Now try the construction with trivial symmetry group.
